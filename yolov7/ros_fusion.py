@@ -7,10 +7,11 @@ import argparse
 
 import rospy
 from sensor_msgs.msg import CompressedImage
-from jsk_recognition_msgs.msg import BoundingBoxArray,BoundingBox
+from jsk_recognition_msgs.msg import BoundingBoxArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 from infer_no_nms import YOLOV7
+from visual_jurdge import Visual_jurdge
 from calibration import Calibration
 
 class LiDAR_Cam:
@@ -33,6 +34,7 @@ class LiDAR_Cam:
         self.img_shape = image_shape
 
         self.yolov7 = YOLOV7(args,image_shape)
+        self.visual = Visual_jurdge()
 
         self.cur_f60_img = {'img':None, 'header':None}
         self.sub_60_img = {'img':None, 'header':None}
@@ -136,6 +138,8 @@ class LiDAR_Cam:
             if lidar != None and lidar != []:
                 predict_2d = self.LiDAR2Cam(np.array(lidar))
                 for box in bboxes:
+                    if box[4] == 81:
+                        self.visual.main(box)
                     for t,poi_2d in enumerate(predict_2d):
                         # if box[0] <= poi_2d[0] <= box[2] and box[1] <= poi_2d[1] <= box[3]:
                         if box[1] <= poi_2d[1] <= box[3]:
