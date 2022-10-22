@@ -184,20 +184,19 @@ class LiDAR_Cam:
         ### for bump the stable range is 37-8
         height = bbox[3]-bbox[1]
         on_off = Float32MultiArray()
-        self.height.append(height)
         
         # with open(os.path.abspath('./dis_weight.txt'),'r')as f:
             # weight = [float(x) for x in f.readlines()[0].split(',')]
 
         # weight = [0.00399,-0.98462,49766/703]
-        # distance = weight[0] * height**2 + weight[2] * height + weight[1]
+        ### distance = weight[0] * height**2 + weight[2] * height + weight[1]
         distance = 67.941*math.exp( 1 )**(-0.017*height)
+        if distance > 15:
+            distance = distance - 4
         print('height is :' ,height)
         print('distance is :',distance)
-        if self.threshold < height:
-            on_off.data.append(1)
-        else:
-            on_off.data.append(0)
+        
+        on_off.data.append(distance)
         self.pub_bump.publish(on_off)
  
     def main(self):
@@ -211,13 +210,13 @@ class LiDAR_Cam:
                 print('num of boxes :',0)
             else:
                 print('num of boxes :',len(self.Camera_60_bbox))
-            for cam_box in self.Camera_60_bbox :
-                if cam_box[4] == 80:
-                    self.Visual_jurdge(cam_box)
-                else:
-                    self.lidar = self.LiDAR_bbox
-                    self.strategy(self.lidar)
-                    self.camera_ob_marker_array = MarkerArray()
+                for cam_box in self.Camera_60_bbox :
+                    if cam_box[4] == 80:
+                        self.Visual_jurdge(cam_box)
+                    else:
+                        self.lidar = self.LiDAR_bbox
+                        self.strategy(self.lidar)
+                        self.camera_ob_marker_array = MarkerArray()
             try:
                 if 1./(time.time() - state) <200:
                     ave_fps += 1./(time.time() - state)
