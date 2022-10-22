@@ -1,5 +1,7 @@
+from cmath import exp
 import os
 import time
+import math
 import numpy as np
 import copy
 import cv2
@@ -7,11 +9,11 @@ import argparse
 
 import rospy
 from sensor_msgs.msg import CompressedImage
+from std_msgs.msg import Float32MultiArray
 from jsk_recognition_msgs.msg import BoundingBoxArray
 from visualization_msgs.msg import Marker, MarkerArray
 
 from infer_no_nms import YOLOV7
-from visual_jurdge import Visual_jurdge
 from calibration import Calibration
 
 class LiDAR_Cam:
@@ -23,18 +25,27 @@ class LiDAR_Cam:
 
         self.cam = None
         self.lidar = None
+        self.threshold = 0
 
         rospy.init_node('LiDAR_Cam_fusion')
 
         common_path = os.getcwd() + '/calibration_data'
-        camera_path = [common_path + '/front_60.txt',common_path +'/camera_lidar.txt',common_path + '/camera.txt',common_path + '/lidar.txt']
+        camera_path = [
+                    '/home/cvlab/catkin_build_ws/src/yolov7/calibration_data/front_60.txt',
+                    '/home/cvlab/catkin_build_ws/src/yolov7/calibration_data/camera_lidar.txt', 
+                    '/home/cvlab/catkin_build_ws/src/yolov7/calibration_data/camera.txt',
+                    '/home/cvlab/catkin_build_ws/src/yolov7/calibration_data/lidar.txt'
+                    # '/home/cvlab-swlee/Desktop/competition/git/2022kiapi_vision/yolov7/calibration_data/front_60.txt',
+                    # '/home/cvlab-swlee/Desktop/competition/git/2022kiapi_vision/yolov7/calibration_data/camera_lidar.txt',
+                    # '/home/cvlab-swlee/Desktop/competition/git/2022kiapi_vision/yolov7/calibration_data/camera.txt',
+                    # '/home/cvlab-swlee/Desktop/competition/git/2022kiapi_vision/yolov7/calibration_data/lidar.txt'
+                    ]
         self.calib = Calibration(camera_path)
 
         self.args = args
         self.img_shape = image_shape
 
         self.yolov7 = YOLOV7(args,image_shape)
-        self.visual = Visual_jurdge()
 
         self.cur_f60_img = {'img':None, 'header':None}
         self.sub_60_img = {'img':None, 'header':None}
@@ -44,13 +55,17 @@ class LiDAR_Cam:
         
         self.get_new_image = False
 
+        self.camera_ob_marker_array = MarkerArray()
         self.pub_camera_ob_marker = rospy.Publisher('/camera_ob_marker', MarkerArray, queue_size=1)
+        self.pub_bump = rospy.Publisher('/camera_ob_bump', Float32MultiArray, queue_size=1)
         # self.pub_camera_190_ob_marker = rospy.Publisher('/Camera/Front190/od_bbox', MarkerArray, queue_size=30)
         
         rospy.Subscriber('/gmsl_camera/dev/video0/compressed', CompressedImage, self.IMG_60_callback)
         # rospy.Subscriber('/gmsl_camera/dev/video1/compressed', CompressedImage, self.IMG_190_callback)
         rospy.Subscriber('/lidar/cluster_box', BoundingBoxArray, self.LiDAR_bboxes_callback)
 
+        ##########################
+        self.pub_cam = rospy.Publisher('/cam/result', Float32MultiArray, queue_size=1)
 
     def IMG_60_callback(self,msg):
         
@@ -76,42 +91,46 @@ class LiDAR_Cam:
 
         self.LiDAR_bbox = lidar_temp
 
-    def Marker(self,predict_3d,label):
-        camera_ob_marker_array = MarkerArray()
+    def Marker(self,obj_list):
         marker_ob = Marker()
 
-        if label == 0 :
-            ob_id = 1
-            color_list = [.0,.0,1.]
-        elif label == 2 or label == 7:
-            ob_id = 2
-            color_list = [.0,1.,.0]
-        else:
-            ob_id = 0
-            color_list = [1.,1.0,1.0]
-        
-        ##marker
-        marker_ob.header.frame_id = 'os_sensor'
-        marker_ob.type = marker_ob.SPHERE
-        marker_ob.action = marker_ob.ADD
-        marker_ob.scale.x = 1.0
-        marker_ob.scale.y = 1.0
-        marker_ob.scale.z = 1.0
-        marker_ob.color.a = 1.0
-        marker_ob.color.r = color_list[0]
-        marker_ob.color.g = color_list[1]
-        marker_ob.color.b = color_list[2]
-        marker_ob.id = ob_id
-        marker_ob.pose.orientation.w = 1.0
+        obj_list = np.array(obj_list).reshape(-1,2)
+        for obj in obj_list:
+            print('obj is :',obj)
+            predict_3d = obj[0]
+            label = obj[1]
+            if label == 0 :
+                ob_id = 1
+                color_list = [.0,.0,1.]
+            elif label == 2 or label == 7:
+                ob_id = 2
+                color_list = [.0,1.,.0]
+            else:
+                ob_id = 0
+                color_list = [1.,1.0,1.0]
+            
+            ##marker
+            marker_ob.header.frame_id = 'os_sensor'
+            marker_ob.type = marker_ob.SPHERE
+            marker_ob.action = marker_ob.ADD
+            marker_ob.scale.x = 1.0
+            marker_ob.scale.y = 1.0
+            marker_ob.scale.z = 1.0
+            marker_ob.color.a = 1.0
+            marker_ob.color.r = color_list[0]
+            marker_ob.color.g = color_list[1]
+            marker_ob.color.b = color_list[2]
+            marker_ob.id = ob_id
+            marker_ob.pose.orientation.w = 1.0
 
-        marker_ob.pose.position.x = predict_3d[0]
-        marker_ob.pose.position.y = predict_3d[1]
-        marker_ob.pose.position.z = predict_3d[2]
+            marker_ob.pose.position.x = predict_3d[0]
+            marker_ob.pose.position.y = predict_3d[1]
+            marker_ob.pose.position.z = predict_3d[2]
 
-        marker_ob.lifetime = rospy.Duration.from_sec(0.3)
-        camera_ob_marker_array.markers.append(marker_ob)
-        self.pub_camera_ob_marker.publish(camera_ob_marker_array)
-        camera_ob_marker_array = MarkerArray()
+            marker_ob.lifetime = rospy.Duration.from_sec(0.3)
+            self.camera_ob_marker_array.markers.append(marker_ob)
+        print('marker is : ',self.camera_ob_marker_array)
+        self.pub_camera_ob_marker.publish(self.camera_ob_marker_array)
 
     def LiDAR2Cam(self,LiDAR):
         ### 3d -> 2d : LiDAR-> Cam 
@@ -130,23 +149,56 @@ class LiDAR_Cam:
             return boxwclass
 
     def strategy(self,lidar): 
-        if self.Camera_60_bbox != None and self.Camera_60_bbox != []:
-            bboxes_60 = self.Camera_60_bbox
-            bboxes = np.array(bboxes_60).reshape(-1,5)
+        bboxes_60 = self.Camera_60_bbox
+        bboxes = np.array(bboxes_60).reshape(-1,5)
+        bboxes = bboxes.tolist()
+        if lidar != None and lidar != []:
+            predict_2d = self.LiDAR2Cam(np.array(lidar)).tolist()
+            obj_list =[]
+            for box in bboxes:
+                self.Visual_jurdge(box)
+                flag= True
+                print('box is :',box)
+                box_mid =[(box[0]+box[2])/2,box[3]]
+                while flag:
+                    try:
+                        if len(bboxes) != 0:
+                            dis = [math.sqrt((poi_2d[0]-box_mid[0])**2+(poi_2d[1]-box_mid[1])**2) for poi_2d in predict_2d]
+                            min_idx = dis.index(min(dis))  
+                            obj_list.append(lidar[min_idx])
+                            obj_list.append(box[4])
+                            bboxes.remove(box)
+                            lidar.remove(lidar[min_idx])
+                            flag =False
+                    except:
+                        flag =False
+            for temp_poi in lidar:
+                obj_list.append(temp_poi)
+                obj_list.append(88)
 
-            print('num of boxes :',len(bboxes))
-            if lidar != None and lidar != []:
-                predict_2d = self.LiDAR2Cam(np.array(lidar))
-                for box in bboxes:
-                    if box[4] == 81:
-                        self.visual.main(box)
-                    for t,poi_2d in enumerate(predict_2d):
-                        # if box[0] <= poi_2d[0] <= box[2] and box[1] <= poi_2d[1] <= box[3]:
-                        if box[1] <= poi_2d[1] <= box[3]:
-                            self.Marker(lidar[t],box[4])
-                        else:
-                            self.Marker(lidar[t],88)
-                
+            self.Marker(obj_list)
+
+    def Visual_jurdge(self,bbox):
+        ### for bump the maximum dis is 37,-2.97
+        ### for bump the minimum dis is 8
+        ### for bump the stable range is 37-8
+        height = bbox[3]-bbox[1]
+        on_off = Float32MultiArray()
+        
+        # with open(os.path.abspath('./dis_weight.txt'),'r')as f:
+            # weight = [float(x) for x in f.readlines()[0].split(',')]
+
+        # weight = [0.00399,-0.98462,49766/703]
+        ### distance = weight[0] * height**2 + weight[2] * height + weight[1]
+        distance = 67.941*math.exp( 1 )**(-0.017*height)
+        if distance > 15:
+            distance = distance - 4
+        print('height is :' ,height)
+        print('distance is :',distance)
+
+        on_off.data.append(distance)
+        self.pub_bump.publish(on_off)
+ 
     def main(self):
         print('lidar_cam')
         ave_fps = 0.0
@@ -154,8 +206,17 @@ class LiDAR_Cam:
         while not rospy.is_shutdown():
             state = time.time()
             self.Camera_60_bbox = self.image_process()
-            self.lidar = self.LiDAR_bbox
-            self.strategy(self.lidar)
+            if self.Camera_60_bbox == None or self.Camera_60_bbox == []:
+                print('num of boxes :',0)
+            else:
+                print('num of boxes :',len(self.Camera_60_bbox))
+                for cam_box in self.Camera_60_bbox :
+                    if cam_box[4] == 80:
+                        self.Visual_jurdge(cam_box)
+                    else:
+                        self.lidar = self.LiDAR_bbox
+                        self.strategy(self.lidar)
+                        self.camera_ob_marker_array = MarkerArray()
             try:
                 if 1./(time.time() - state) <200:
                     ave_fps += 1./(time.time() - state)
@@ -167,9 +228,8 @@ class LiDAR_Cam:
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='')
-    # parser.add_argument('--weightfile', default=os.getcwd()+"/weights/yolov7-tiny-no-nms.trt")  
-    # parser.add_argument('--weightfile', default=os.getcwd()+"/weights/yolov7-no-nms_swlee.trt")  
-    parser.add_argument('--weightfile', default=os.getcwd()+"/weights/yolov7-transfer.trt")  
+    parser.add_argument('--weightfile', default="/home/cvlab/catkin_build_ws/src/yolov7/weights/yolov7-transfer.trt")  
+    # parser.add_argument('--weightfile', default="/home/cvlab-swlee/Desktop/competition/git/2022kiapi_vision/yolov7/weights/yolov7-transfer.trt")  
     parser.add_argument('--interval', default=1, help="Tracking interval")
     
     parser.add_argument('--namesfile', default="data/coco.names", help="Label name of classes")
