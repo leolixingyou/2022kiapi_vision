@@ -64,8 +64,6 @@ class LiDAR_Cam:
         # rospy.Subscriber('/gmsl_camera/dev/video1/compressed', CompressedImage, self.IMG_190_callback)
         rospy.Subscriber('/lidar/cluster_box', BoundingBoxArray, self.LiDAR_bboxes_callback)
 
-        ##########################
-        self.pub_cam = rospy.Publisher('/cam/result', Float32MultiArray, queue_size=1)
 
     def IMG_60_callback(self,msg):
         
