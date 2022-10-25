@@ -197,9 +197,34 @@ class LiDAR_Cam:
                     return distance ,2
                 else:
                     return .0,2
-            
+            if bbox[4] == 0:
+                height = bbox[3]-bbox[1]
+                width = bbox[2]-bbox[0]
+                area = height * width
+                bbox_mid = (bbox[0] +bbox[2])/2
+                if 4< area:
+
+                    ###= -0.0042x2 + 1.1597x - 63.292
+                    ### Y:0.1133x2 - 2.2825x + 8.6965
+                    ### X 276.53e-0.011x  27.172e-0.004x
+                    ### Y -0.0006x2 + 0.9589x - 366.58 = 0.0524x2 - 1.3271x + 6.5335
+                    # pred_x = -0.0042 * height ** 2 + 1.1597 * height - 63.292
+                    # pred_y = 0.1133 * bbox_mid ** 2 - 2.2825 * bbox_mid + 8.6965
+                    ## dist = -0.0002x2 + 0.0511x + 12.412 =-0.0357x + 21.148
+                    pred_x = 27.172 * math.exp( 1 ) ** (-.004*height)
+                    pred_y = 0.0524 * bbox_mid ** 2 - 1.3271 * bbox_mid + 6.5335
+                    # pred_dis = math.sqrt((pred_x)**2+(pred_y)**2)
+                    pred_dis = -0.0002 * height ** 2 + 0.0511 * height + 12.412
+                    print('heightt is :', height)
+                    print('bbox_mid is :', bbox_mid)
+                    print('area is :', pred_x)
+                    print('pred_dist is :', pred_dis)
+                    return pred_dis,0
+                else:
+                    return .0,0
+
     def main(self):
-        visual_off = 1.5
+        visual_off = 2
         cam_box =1000
         visual_dis= .0
         while not rospy.is_shutdown():
@@ -211,7 +236,6 @@ class LiDAR_Cam:
                 if self.is_bump:
                     self.Visual_bump_jurdge(self.Camera_60_bbox)
                 if self.detect:
-                    print('check is :' , self.Camera_60_bbox)
                     visual_dis,cls = self.Visual_jurdge(self.Camera_60_bbox)
                     self.detect = False
 
@@ -225,7 +249,7 @@ class LiDAR_Cam:
                             cam_box = cls
                         # self.Visual_jurdge(cam_box)
                         if cam_box == 0:
-                            color_list = [1.,1.0,1.0]
+                            color_list = [.0,.0,1.]
                             self.camera_ob_marker_array.markers.append(self.Makerpub(lidar,color_list))
                             cam_box = 1000
                         elif cam_box == 2:
